@@ -1,0 +1,238 @@
+---
+title: "Time Series Forecasting of Diagnosed HIV Cases in Davao Region using ARIMA Models"
+author: "Jamaiya Hadji Acmad | Jecelle Israel | Judilee John Ranara"
+output: pdf_document
+fontsize: 11pt
+header-includes:
+  - \pagenumbering{gobble}
+---
+
+## PROBLEM
+
+### Introduction
+
+This study explores the application of AutoRegressive Integrated Moving Average (ARIMA) modeling technique for time series forecasting of HIV cases in Davao Region, Philippines. The findings of the study can contribute to informed decision-making and resource allocation for effective healthcare planning and intervention strategies towards HIV prevention and control in the region.
+
+### Background of the Study
+
+The rising prevalence of Human Immunodeficiency Virus/Acquired Immunodeficiency Syndrome (HIV/AIDS) poses a significant public health threat globally, including in the Philippines. Compared to the other regions in the Philippines, Region XI ranked 5th, contributing to 1,347 new cases in the entire country from January to September 2022 (Cayon, 2022), with monthly cases not less than 50. With the aforementioned problem, there is a need and urgency to address it and develop effective strategies for prevention and control. Time series analysis and forecasting are crucial for predicting future trends, with the use of ARIMA models. The ARIMA modeling technique has been widely employed in numerous studies to forecast HIV cases accurately. Thus, this study is designed to develop a reliable forecasting model for predicting monthly diagnosed HIV cases in Region XI for a year. By doing so, proactive planning and response can be facilitated, enabling healthcare systems to meet the growing demand for HIV-related services effectively in terms of timely implementation of control measures and interventions.
+
+## DATA
+
+### Data Preprocessing
+
+The dataset was initially collected through business correspondence with The Regional HIV/STI Surveillance Unit of the Davao Center for Health Development. One of the researchers sent an email approved by the course instructor to the said office requesting for historical data of number of monthly diagnosed HIV cases in Davao Region for the year 2003-2022. The data transformation revolves on stabilizing variance as applying a logarithmic transformation, the variability can be stabilized, allowing for more reliable statistical analysis and modeling.
+
+```{r include=FALSE}
+library('fpp2')
+library(dplyr)
+library(gridExtra)
+library(urca)
+library(stlplus)
+library(kableExtra)
+library(ggplot2)
+
+hiv_data <- read.csv("C:/Users/judilee/Downloads/hiv cases raw data .csv")
+hiv_data$lognumval <- log(hiv_data$num_hiv+1)
+log(hiv_data$num_hiv+1)
+hiv_data$lognumval
+hiv_tslog <- ts(hiv_data$lognumval,  start=2003, frequency=12)
+hiv_tslog
+#time series plot of the original data
+(autoplot(hiv_tslog) + ggtitle("Time Series Plot") 
+  + xlab("Year") + ylab("Number of HIV Cases"))
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## TECHNIQUES
+
+### Feature Construction
+
+As shown in Figure 1, the monthly newly diagnosed cases of HIV in the Philippines from January 2003 to December 2022 was made into a time series plot with a frequency of 12. Since stationarity is an important assumption for ARIMA models, there is a need to determine if the data is stationary. The initial inspection of the original data conducted through plotting time series decomposition, shows increasing trend and no seasonality where data exhibits long-term increase and no seasonal behavior. Hence, the resulting time series plot of the data is said to be nonstationary. However, employing a unit root test was viewed as a more effective approach to assess the stationarity of the data.
+
+```{r, fig.cap='Time Series Plot of HIV Cases in Davao Region', fig.dim=c(5,3), fig.align='center'}
+(autoplot(hiv_tslog) + ggtitle("Number of HIV Cases in Davao Region") 
+                        + xlab("Year") + ylab("Number of HIV Cases"))
+```
+```{r include=FALSE}
+#time series decomposition
+hiv_stl <- stlplus(hiv_tslog, s.window = "period")
+plot(hiv_stl)
+```
+
+### Feature Selection and Transformation
+
+```{r include=FALSE}
+hiv_tslog %>% ur.kpss() %>% summary() #kpss test
+```
+
+The researchers then used the Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test. The test statistic **(4.284)** is much bigger than the 1% critical value **(0.739)**. Hence, the null hypothesis was rejected which concludes that the original data are not stationary. This implied the need for differencing the data and apply the test again.
+
+```{r include=FALSE}
+hiv_tslog %>% diff() %>% ur.kpss() %>% summary() #after first diff
+ndiffs(hiv_tslog) #to prove that only one diff was made
+hiv_ts_d1 <- diff(hiv_tslog, differences = 1)
+plot(hiv_ts_d1)
+```
+
+After differencing the original data and subsequently subjecting it again to the KPSS test, the data became stationary, with the test statistics **(0.0253)** which is smaller than the critical value **(0.739)**. The function **ndiffs()** was utilized to support the claim of how many times our data must be differenced, indicating **d=1**. In ARIMA modeling technique, the "d" component refers to the differencing parameter, which represents the number of times differencing is applied to the time series data to make it stationary.
+
+### Model Comparison
+
+First, the **auto.arima()** function with no seasonality was used to automatically fit an ARIMA model. Then, the resulting ARIMA model was **MA(0,1,1)** with drift.
+
+```{r include=FALSE}
+(fit_autoarima <- auto.arima(hiv_tslog, seasonal=FALSE)) 
+```
+
+```{r, fig.cap='ACF and PACF Plots of the Differenced Data', fig.dim=c(5,3), fig.align='center'}
+acfplot1=ggAcf(hiv_ts_d1) + ggtitle("ACF Plot")
+acfplot2=ggPacf(hiv_ts_d1) + ggtitle("PACF Plot")
+grid.arrange(acfplot1,acfplot2,ncol=2)
+```
+
+Next, the researchers let the PACF and ACF plots of the differenced data to determine the values of p and q, respectively. As shown above, the PACF shows exponentially decaying or sinusoidal pattern. While the ACF plot contains two significant spike, the PACF plot has three significant spikes and then almost no spikes thereafter. Consequently, the ACF and PACF lead the researchers come up with **ARIMA(0,1,2)** model and deemed as appropriate one.
+
+```{r include=FALSE}
+(fit_ma <- Arima(hiv_tslog, order=c(0,1,2))) #based on the acf and pacf plot
+```
+
+Then, the researchers improve the model by incorporating arguments **stepwise = FALSE** and **approximation = FALSE** to **seasonal = FALSE** in automatically fitting another ARIMA model. After which, the model generated was **ARIMA(3,1,2)** with drift. Consequently, the researchers decided to consider again another model, but this time, it was an autoregressive model which is **AR(3,1,0)**, as the higher the **p**, the data will be more smoothed.
+
+```{r include=FALSE}
+(fit_autoarima_noapprox <- auto.arima(hiv_tslog, seasonal=FALSE,stepwise=FALSE, approximation=FALSE))
+(fit_ar <- Arima(hiv_tslog, order=c(3,1,0)))
+```
+
+```{r fig.height=2, fig.width=2, paged.print=TRUE}
+AICC <- data.frame(NO. = 1:4, Model = c("ARIMA(0,1,2)","ARIMA(3,1,0)", "ARIMA(0,1,1) w/o Seasonality", "ARIMA(3,1,2) w/o Seasonality, approximation, stepwise"), 
+                            AICc = c(394.29, 400.81, 392.56, 387.76))
+kable(AICC, caption = "The AICc values of the four (4) ARIMA models", booktabs = T) %>%
+    kable_styling(latex_options = "hold_position") %>%
+    kable_styling(latex_options = "striped")
+```
+
+The Akaike Information Criterion with a correction (AICc) was utilized as measure to compare different ARIMA models with the different combinations of parameters. From the Table 1, the **auto.arima()** function w/o seasonality, approximation, stepwise generated a model that achieved the lowest AICc among the four models evaluated which is **(387.76)**. In this case, the model **ARIMA(3,1,2)** was considered for the forecasting process, as it demonstrates strong performance based on the AICc criterion.
+
+### Model Training and Validation
+
+Root Mean Squared Error (RMSE) is a metric used to evaluate the accuracy of a predictive model by measuring the average magnitude of the prediction errors. A lower RMSE indicates smaller prediction errors and generally suggests a more accurate model in terms of point predictions.
+
+```{r include=FALSE}
+accuracy(fit_ma) 
+accuracy(fit_ar) 
+accuracy(fit_autoarima) 
+accuracy(fit_autoarima_noapprox)
+```
+```{r include=FALSE}
+#checking for residuals
+checkresiduals(fit_ma) 
+checkresiduals(fit_ar) 
+checkresiduals(fit_autoarima) 
+checkresiduals(fit_autoarima_noapprox)
+```
+
+```{r fig.height=2, fig.width=2, paged.print=TRUE}
+RMSE <- data.frame(NO. = 1:4, Model = c("ARIMA(0,1,2)","ARIMA(3,1,0)", "ARIMA(0,1,1) w/o Seasonality", "ARIMA(3,1,2) w/o Seasonality, approximation, stepwise"), 
+                            RMSE = c(0.5431849, 0.5484074, 0.5411318, 0.5261236))
+kable(RMSE, caption = "The RMSE values of the four (4) ARIMA models", booktabs = T) %>%
+    kable_styling(latex_options = "hold_position") %>%
+    kable_styling(latex_options = "striped")
+```
+
+Among the four models, it was observed that the model **ARIMA(3,1,2)** exhibited the smallest RMSE which is **(0.5261236)**. Thus, the researchers considered this model for data forecasting.
+
+```{r include=FALSE}
+training <- subset(hiv_tslog, end=length(hiv_tslog)-37)
+test <- subset(hiv_tslog, start=length(hiv_tslog)-36)
+ModelTrain1 <- Arima(training, order=c(0,1,2), include.drift = FALSE)
+ModelTrain1 %>%
+  forecast(h=19)
+ModelTrain2 <- Arima(training, order=c(3,1,0), include.drift = FALSE)
+ModelTrain2 %>%
+  forecast(h=19)
+ModelTrain3 <- Arima(training, order=c(0,1,1), include.drift = TRUE)
+ModelTrain3 %>%
+  forecast(h=19) 
+ModelTrain4 <- Arima(training, order=c(3,1,2), include.drift = TRUE)
+ModelTrain4 %>%
+  forecast(h=19) 
+```
+
+Before selecting a model to forecast, all models were subjected to model training and fitting. This process is crucial as it helps us see how the proposed model is adaptive or sensitive to changing data patterns, which allows us to optimize more the model parameters and evaluate the model performance. Based on the time series, there can be seen a sudden downward shift of data from some months in the year 2020. Upon checking the data, there were months in the said year where no cases are recorded, which can be explained by some factors. Consequently, the models were fitted from the starting year until 2019.
+
+```{r, fig.cap='Model Fitting Plot of the Selected Model ARIMA(3,1,2)', fig.height=3, fig.width=5, fig.align='center'}
+(autoplot(hiv_tslog) +
+    autolayer(fitted(ModelTrain4), series = "ARIMA(3,1,2)") +
+    guides(colour = guide_legend("Model"))+ xlab("Year") + ylab("Number of HIV Cases") +
+    theme(legend.position = "bottom"))
+```
+```{r include=FALSE}
+(autoplot(hiv_tslog) +  
+    autolayer(fitted(ModelTrain1), series = "ARIMA(0,1,2)") +
+    autolayer(fitted(ModelTrain2), series = "ARIMA(3,1,0)") +
+    autolayer(fitted(ModelTrain3), series = "ARIMA(0,1,1)") +
+    autolayer(fitted(ModelTrain4), series = "ARIMA(3,1,2)") +
+    guides(colour = guide_legend("Model"))+ xlab("Year") + ylab("Number of HIV Cases") +
+    theme(legend.position = "bottom"))
+```
+Among the four models, the best fitted model is **ARIMA(3,1,2)** with  drift, which is the model we considered earlier as it has indicators of being a good model (with lowest AICc and smallest RMSE).
+
+## RESULTS AND DISCUSSION
+```{r include=FALSE}
+forecast1 <- forecast(fit_ma, h=19)
+forecast2 <- forecast(fit_ar, h=19)
+forecast3 <- forecast(fit_autoarima, h=19)
+forecast4 <- forecast(fit_autoarima_noapprox, h=19)
+```
+
+```{r, fig.cap='Time Series Plot of Forecasted HIV Cases in Davao Region from January 2023 to July 2024', fig.height=3, fig.width=7, fig.align='center'}
+(autoplot(hiv_tslog) +  
+    autolayer(forecast1, series = "ARIMA(0,1,2)") +
+    autolayer(forecast2, series = "ARIMA(3,1,0)") +
+    autolayer(forecast3, series = "ARIMA(0,1,1)") +
+    autolayer(forecast4, series = "ARIMA(3,1,2)") +
+    guides(colour = guide_legend("Model"))+ xlab("Year") + ylab("Number of HIV Cases") +
+    theme(legend.position = "bottom"))
+```
+
+All models were also applied to forecast the HIV cases in the region for the next 19 months, spanning from January 2023 to July 2024. Among the four models, the lowest AICc and RMSE values certainly point on a specific model which is **ARIMA(3,1,2)**, which is also the best fit model. With this, the researchers suggested that this model will be the most accurate compared to the other models.
+
+Based on the time series plot with the forecasted data from and focusing on the selected model, the forecast shows that the HIV cases in Davao Region will continue to increase, exhibiting an increasing trend.
+
+## CONCLUSION
+
+In light of the findings, the time series forecasting of HIV cases in Davao Region using ARIMA models indicates an increasing trend. The forecasted data consistently demonstrates a rising pattern in the number of HIV cases over the study period. The results of this endeavor underscores an important **insight** which is the urgent need of proactive measures and targeted interventions to address the increasing burden of HIV in the region, particularly widespread sex education, and accessible healthcare services. Furthermore, the researchers conducted this study of time series analysis forecasting of HIV cases in Davao City using ARIMA models for a cause which presents benefits to various domains of human existence.
+
+First, **policymakers and healthcare authorities** can use these accurate forecasts to allocate resources, plan targeted interventions, and implement control measures to combat HIV spread.
+
+**Healthcare providers** can benefit by anticipating HIV-related services demand, ensuring timely and efficient care.
+
+Additionally, **HIV/AIDS organizations and NGOs** can optimize their outreach and intervention efforts, targeting high-risk areas and populations.
+
+**Researchers and the academe** can also leverage the forecasting model to advance studies in public health and epidemiology.
+
+Lastly, the **general public** can benefit from increased awareness, informed sexual health decisions and preventive measures.
+
+## RECOMMENDATIONS
+
+The researchers found out that the more models to be considered (meaning: the more differently-arranged combination of values for (p,d,q) parameters), the higher the possibility for them to acquire a model that is best fit, with lowest AICc, or smallest RMSE. However, due to time constraints, the researchers only consider few combinations, which are based on **auto.arima()** functions and ACF and PACF plots. Moreover, the historical data can also be detrended and smoothed, instead of differencing, considering that the data has no seasonality patterns.
+
+Based on the results of the study, and the conclusions drawn from them, the following recommendations were suggested. The proponents of this project recommend the future researchers to address the limitations of the study and to construct the same research in a new context or location. Future studies can also consider utilizing other forecasting techniques that can be suited for the type of the data.
+
+### CODES
+
+The time series analysis and forecasting of the historical data were performed using RStudio. The codes and raw dataset used can be accessed through this link: <https://github.com/upminruru/AMAT132-Final-Project-FILES-.git>.
+
+## REFERENCES
+
+**Apa-ap R. & Tolosa, H. (2018)**. Forecasting the Monthly Cases of Human Immunodeficiency Virus (HIV) of the Philippines. *Indian Journal of Science and Technology*. Polytechnic University of the Philippines, College of Science, Department of Mathematics and Statistics. 11(47), doi: 10.17485/ijst/2018/v11i47/121923.
+
+**Cayon, C. (2022)**. HIV cases increasing in Davao Region. *Philippine Information Agency*. Retrieved on June 12, 2023 from <https://pia.gov.ph/news/2022/12/19/hiv-cases-increasing-in-davao-region>.
+
+**Kurniasari, M., Huruta, A., Tsai, H., Lee, C. (2021)**. Forecasting future HIV infection cases: evidence from Indonesia. *Soc Work Public Health*.36(1):12-25. doi: 10.1080/19371918.2020.1851332.
+
+**Yang, Y., Zhu, Y., Tseng, S., Tang, L., Chen, Y. & Guo, X. (2021)**. Prediction and analysis of HIV/AIDS incidence based on ARIMA model in China. *29th International Conference on Orange Technology (ICOT)*. Tainan, Taiwan. pp. 1-4, doi: 10.1109/ICOT54518.2021.9680664.
